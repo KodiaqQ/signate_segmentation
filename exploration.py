@@ -1,5 +1,5 @@
 import os
-import albumentations
+from albumentations import (HorizontalFlip, ShiftScaleRotate, OneOf, Compose, RandomBrightnessContrast)
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
@@ -31,6 +31,16 @@ CLASS_COLOR = {
 }
 
 
+def strong_aug(p=0.5):
+    return Compose([
+        OneOf([
+            ShiftScaleRotate(p=0.5, rotate_limit=10, interpolation=cv2.INTER_CUBIC, scale_limit=0),
+            HorizontalFlip(p=0.5)
+        ]),
+        RandomBrightnessContrast(p=0.5)
+    ], p=p)
+
+
 if __name__ == '__main__':
     train_list = os.listdir(TRAIN_PATH)
     test_label = train_list[0]
@@ -39,11 +49,22 @@ if __name__ == '__main__':
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     mask = cv2.imread(os.path.join(ANNO_PATH, test_label.replace('.jpg', '.png')), cv2.IMREAD_UNCHANGED)
     mask = cv2.cvtColor(mask, cv2.COLOR_BGR2RGB)
-    # mask_in_range = cv2.inRange(mask, CLASS_COLOR['Car'], CLASS_COLOR['Car'])
+    # mask_in_range = cv2.inRange(mask, np.asarray(CLASS_COLOR['own']), np.asarray(CLASS_COLOR['own']))
 
-    fig, axes = plt.subplots(1, 2)
-    axes[0].imshow(image)
-    axes[1].imshow(mask)
+    augmentation = strong_aug(p=1)
+    data = {"image": image, "mask": mask}
+    augmented = augmentation(**data)
+    image_a, mask_a = augmented["image"], augmented["mask"]
+
+    fig, axes = plt.subplots(2, 2)
+    axes[0, 0].imshow(image)
+    axes[0, 0].set_title('image')
+    axes[1, 0].imshow(image_a)
+    axes[1, 0].set_title('aug image')
+    axes[0, 1].imshow(mask)
+    axes[0, 1].set_title('mask')
+    axes[1, 1].imshow(mask_a)
+    axes[1, 1].set_title('aug mask')
     # axes[1].imshow(mask_in_range)
 
     plt.show()
