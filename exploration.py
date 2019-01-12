@@ -1,5 +1,5 @@
 import os
-from albumentations import (HorizontalFlip, ShiftScaleRotate, OneOf, Compose, RandomBrightnessContrast)
+from albumentations import (HorizontalFlip, ShiftScaleRotate, OneOf, Compose, RandomBrightnessContrast, RandomCrop)
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
@@ -37,7 +37,8 @@ def strong_aug(p=0.5):
             ShiftScaleRotate(p=0.5, rotate_limit=10, interpolation=cv2.INTER_CUBIC, scale_limit=0),
             HorizontalFlip(p=0.5)
         ]),
-        RandomBrightnessContrast(p=0.5)
+        RandomBrightnessContrast(p=0.5),
+        RandomCrop(p=1, height=512, width=512)
     ], p=p)
 
 
