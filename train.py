@@ -5,9 +5,12 @@ from albumentations import (HorizontalFlip, ShiftScaleRotate, OneOf, Compose, Ra
 import cv2
 from keras.preprocessing.image import ImageDataGenerator
 from keras.optimizers import Adam
+from keras.utils import to_categorical
 from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
 import numpy as np
 import matplotlib.pyplot as plt
+from keras.models import Model
+from keras.layers import Conv2D,Input
 from sklearn.model_selection import train_test_split
 
 PATH = 'E:/datasets/signate'
@@ -79,11 +82,10 @@ class DataLoader:
         train_images = list(filter(lambda x: x.endswith('.jpg'), os.listdir(TRAIN_PATH)))
 
         # input data array
-        x_data = np.empty((len(train_images) * 2, self.shape[0], self.shape[1], self.shape[2]), dtype='uint8')
-        y_data = np.empty((len(train_images) * 2, self.shape[0], self.shape[1], self.shape[2]), dtype='uint8')
+        x_data = np.empty((len(train_images[:10]) * 2, self.shape[0], self.shape[1], self.shape[2]), dtype='uint8')
+        y_data = np.empty((len(train_images[:10]) * 2, self.shape[0], self.shape[1], self.shape[2]), dtype='uint8')
 
-        total = 0
-        for i, file_name in enumerate(train_images):
+        for i, file_name in enumerate(train_images[:9]):
             image = cv2.imread(os.path.join(TRAIN_PATH, file_name), cv2.IMREAD_UNCHANGED)
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
@@ -95,9 +97,9 @@ class DataLoader:
                 augmented = augmentation(**data)
                 image_a, mask_a = augmented['image'], augmented['mask']
 
-                x_data[total] = image_a
-                y_data[total] = mask_a
-                total += 1
+                print('making ' + str(i+j) + ' image..')
+                x_data[i+j] = image_a
+                y_data[i+j] = mask_a
 
         return x_data, y_data
 
@@ -137,21 +139,32 @@ def dice_loss(y_true, y_pred):
 
 if __name__ == '__main__':
 
-    loader = DataLoader(shape=(512, 512, 3))
+    loader = DataLoader(shape=(256, 256, 3))
+
+    print('preparing images..')
 
     train, masks = loader.prepare()
 
-    x_train, x_val, y_train, y_val = train_test_split(train, masks, test_size=0.2, random_state=SEED, shuffle=True)
+    print('splitting train/validation..')
 
-    model = FPN(
+    x_train, x_val, y_train, y_val = train_test_split(train, masks, test_size=0.2, random_state=SEED)
+
+    print('making model')
+
+    input_layer = Input(shape=(256, 256, 3))
+    fpn = FPN(
         backbone_name='resnet34',
-        input_shape=(512, 512, 3),
+        input_tensor=input_layer,
         encoder_weights='imagenet',
         classes=len(CLASS_COLOR),
         use_batchnorm=True,
-        dropout=0.25
+        dropout=0.25,
+        activation='softmax'
     )
-    model.summary()
+
+    x = fpn.layers[-1].output
+    x = Conv2D(3, (1, 1), activation='softmax')(x)
+    model = Model(input=input_layer, output=x)
 
     save_name = 'resnet34_test'
     callbacks_list = [
@@ -175,9 +188,7 @@ if __name__ == '__main__':
                                   validation_data=loader.val_generator(x_val, y_val),
                                   validation_steps=len(x_val),
                                   epochs=10,
-                                  verbose=1,
-                                  shuffle=True,
-                                  callbacks=callbacks_list)
+                                  verbose=1)
 
     model_json = model.to_json()
     json_file = open('../models/some.json', 'w')
