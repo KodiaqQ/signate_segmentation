@@ -129,7 +129,9 @@ class SegDataGenerator(Sequence):
             for i, name in enumerate(self._in_files[idx * self._batch_size:(idx + 1) * self._batch_size]):
 
                 img = cv2.imread(os.path.join(self._dir, name), cv2.IMREAD_UNCHANGED)
-                mask = cv2.imread(os.path.join(self._mask_dir, self._mask_files[idx]), cv2.IMREAD_UNCHANGED)
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                mask = cv2.imread(os.path.join(self._mask_dir, name.replace('.jpg', '.png')), cv2.IMREAD_UNCHANGED)
+                mask = cv2.cvtColor(mask, cv2.COLOR_BGR2RGB)
 
                 batch_img, batch_mask = self.__filter__(img, mask)
                 batch_x[i] = batch_img
@@ -153,12 +155,11 @@ class SegDataGenerator(Sequence):
             dashed_mask = np.empty((self._mask_shape[self._h], self._mask_shape[self._w], self._classes), dtype='float32')
 
             for color in self._colors:
-                one_mask = cv2.inRange(batch_mask_a, color, color)
-                np.append(dashed_mask, one_mask)
-
-            return batch_img_a, batch_mask_a
+                one_mask = cv2.inRange(batch_mask_a, np.asarray(self._colors[color]), np.asarray(self._colors[color]))
+                np.append(dashed_mask, one_mask.astype('float32'))
+            return batch_img_a.astype('float32'), dashed_mask
         else:
-            return batch_img_a, batch_mask_a
+            return batch_img_a.astype('float32'), batch_mask_a.astype('float32')
 
     @staticmethod
     def _def_preprocess(img, mask, prob_aug):
@@ -194,7 +195,7 @@ def strong_aug(p=0.5):
             HorizontalFlip(p=0.5)
         ]),
         RandomBrightnessContrast(p=0.5),
-        RandomCrop(p=1, height=512, width=512)
+        RandomCrop(p=1, height=256, width=256)
     ], p=p)
 
 
@@ -205,74 +206,9 @@ def make_aug(image, mask, p):
     return augmented['image'], augmented['mask']
 
 
-def IOU(true, pred):
-    iou_over_all = 0
-    num_images = len(true)
-    images_intersection = set(true).intersection(set(pred))
-    for image_intersection in images_intersection:
-        iou_per_image = 0
-        y_true_categories = true[image_intersection]
-        num_categories = len(y_true_categories)
-        y_pred_categories = pred[image_intersection]
-        categories_intersection = set(y_true_categories).intersection(set(y_pred_categories))
-        iou_per_category = 0
-        for category in categories_intersection:
-            y_pred = y_pred_categories[category]
-            y_true = y_true_categories[category]
-            iou_per_category += compute_iou_pix(y_pred, y_true)
-        iou_per_image += iou_per_category
-        iou_per_image/=num_categories
-        iou_over_all += iou_per_image
-    return iou_over_all/num_images
-
-
-def compute_area(data):
-    """
-    data: dict
-    {x_1,segments_1, x_2:segments_2}
-    """
-    area = 0
-    for segments in data.values():
-        for segment in segments:
-            area += max(segment)-min(segment)+1
-    return area
-
-
-def compute_iou_pix(y_pred, y_true):
-    """
-    y_pred, y_true: dict
-    {x_1:segments_1, x_2:segments_2,...}
-    """
-    area_true = compute_area(y_true)
-    area_pred = compute_area(y_pred)
-    x_intersection = set(y_true).intersection(set(y_pred))
-    area_intersection = 0
-    for x in x_intersection:
-        segments_true = y_true[x]
-        segments_pred = y_pred[x]
-        for segment_true in segments_true:
-            max_segment_true = max(segment_true)
-            min_segment_true = min(segment_true)
-            del_list = []
-            for segment_pred in segments_pred:
-                max_segment_pred = max(segment_pred)
-                min_segment_pred = min(segment_pred)
-                if max_segment_true>=min_segment_pred and min_segment_true<=max_segment_pred:
-                    seg_intersection = min(max_segment_true, max_segment_pred)-max(min_segment_true, min_segment_pred)+1
-                    area_intersection += seg_intersection
-                    if max_segment_true>=max_segment_pred and min_segment_true<=min_segment_pred:
-                        del_list.append(segment_pred)
-            for l in del_list:
-                segments_pred.remove(l)
-
-    area_union = area_true + area_pred - area_intersection
-
-    return area_intersection/area_union
-
-
 if __name__ == '__main__':
 
-    generator = SegDataGenerator(TRAIN_PATH, ANNO_PATH, image_shape=(1216, 1936, 3), mask_shape=(1216, 1936, 3), preprocessing_function=make_aug, classes=len(CLASS_COLOR), classes_colors=CLASS_COLOR, prob_aug=1)
+    generator = SegDataGenerator(TRAIN_PATH, ANNO_PATH, batch_size=2, image_shape=(256, 256, 3), mask_shape=(256, 256, 3), preprocessing_function=make_aug, classes=len(CLASS_COLOR), classes_colors=CLASS_COLOR, prob_aug=1)
     input_layer = Input(shape=(256, 256, 3))
     model = FPN(
         backbone_name='resnet34',
@@ -299,7 +235,7 @@ if __name__ == '__main__':
             min_lr=1e-5)
         ]
 
-    model.compile(optimizer=Adam(1e-4), loss=dice_loss, metrics=[dice_coef, jaccard_coef, IOU])
+    model.compile(optimizer=Adam(1e-4), loss=dice_loss, metrics=[dice_coef, jaccard_coef])
 
     history = model.fit_generator(generator,
                                   steps_per_epoch=3000,
