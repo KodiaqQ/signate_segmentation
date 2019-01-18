@@ -8,8 +8,7 @@ from keras.optimizers import Adam
 from keras.utils import to_categorical
 from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
 import numpy as np
-import matplotlib.pyplot as plt
-from keras.models import Model
+from keras.utils import to_categorical
 from keras.layers import Conv2D,Input
 from sklearn.model_selection import train_test_split
 from keras.utils import Sequence
@@ -39,7 +38,6 @@ CLASS_COLOR = {
     'others': [81, 99, 0],
     'own': [86, 62, 67]
 }
-smooth = 1e-10
 SEED = 42
 
 
@@ -168,24 +166,41 @@ class SegDataGenerator(Sequence):
 
 def dice_coef(y_true, y_pred):
     smooth = 1.
-    y_true_f = K.flatten(y_true)
-    y_pred_f = K.flatten(y_pred)
-    intersection = K.sum(y_true_f * y_pred_f)
-    return (2. * intersection + smooth) / (K.sum(y_true_f) + K.sum(y_pred_f) + smooth)
+
+    dice_all = 0
+    for layer in range(len(CLASS_COLOR)):
+        true_layer = y_true[:, :, :, layer]
+        pred_layer = y_pred[:, :, :, layer]
+        y_true_f = K.flatten(true_layer)
+        y_pred_f = K.flatten(pred_layer)
+        intersection = K.sum(y_true_f * y_pred_f)
+        dice = (2. * intersection + smooth) / (K.sum(y_true_f) + K.sum(y_pred_f) + smooth)
+        dice_all += dice
+    return dice_all / len(CLASS_COLOR)
 
 
 def jaccard_coef(y_true, y_pred):
-    # __author__ = Vladimir Iglovikov
-    intersection = K.sum(y_true * y_pred, axis=[0, -1, -2])
-    sum_ = K.sum(y_true + y_pred, axis=[0, -1, -2])
+    smooth = 1e-12
+    jaccard = 0
+    for layer in range(len(CLASS_COLOR)):
+        true_layer = y_true[:, :, :, layer]
+        pred_layer = y_pred[:, :, :, layer]
 
-    jac = (intersection + smooth) / (sum_ - intersection + smooth)
+        intersection = K.sum(true_layer * pred_layer, axis=[0, -1, -2])
+        sum_ = K.sum(true_layer + pred_layer, axis=[0, -1, -2])
 
-    return K.mean(jac)
+        jac = (intersection + smooth) / (sum_ - intersection + smooth)
+
+        jaccard += K.mean(jac)
+    return jaccard / len(CLASS_COLOR)
 
 
 def dice_loss(y_true, y_pred):
     return 1. - dice_coef(y_true, y_pred)
+
+
+def jaccard_loss(y_true, y_pred):
+    return 1. - jaccard_coef(y_true, y_pred)
 
 
 def strong_aug(p=0.5):
@@ -239,7 +254,7 @@ if __name__ == '__main__':
 
     history = model.fit_generator(generator,
                                   steps_per_epoch=3000,
-                                  epochs=10,
+                                  epochs=1,
                                   verbose=1)
 
     model_json = model.to_json()
