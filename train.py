@@ -7,7 +7,7 @@ from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
 from keras.layers import Input
 import sys
 import argparse
-from losses import dice_coef, dice_loss, jaccard_coef
+from losses import dice_coef, dice_loss, jaccard_coef, custom_loss, mean_iou
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--path', help='Path to dataset', default='data')
@@ -23,10 +23,25 @@ TRAIN_PATH = os.path.join(args.path, 'seg_train_images')
 ANNO_PATH = os.path.join(args.path, 'seg_train_annotations')
 CLASS_COLOR = {
     'Car': [0, 0, 255],
+    'Bus': [193, 214, 0],
+    'Truck': [180, 0, 129],
+    'SVehicle': [255, 121, 166],
     'Pedestrian': [255, 0, 0],
+    'Motorbike': [65, 166, 1],
+    'Bicycle': [208, 149, 1],
+    'Signal': [255, 255, 0],
+    'Signs': [255, 134, 0],
     'Sky': [0, 152, 225],
+    'Building': [0, 203, 151],
     'Natural': [85, 255, 50],
+    'Wall': [92, 136, 125],
     'Lane': [69, 47, 142],
+    'Ground': [136, 45, 66],
+    'Sidewalk': [0, 255, 255],
+    'RoadShoulder': [215, 0, 255],
+    'Obstacle': [180, 131, 135],
+    'others': [81, 99, 0],
+    'own': [86, 62, 67]
 }
 SEED = 42
 IMG_HEIGHT, IMG_WIDTH = 256, 256
@@ -57,7 +72,7 @@ if __name__ == '__main__':
                                  classes_colors=CLASS_COLOR, prob_aug=1)
     input_layer = Input(shape=(IMG_HEIGHT, IMG_WIDTH, 3))
     model = FPN(
-        backbone_name=args.name,
+        backbone_name=args.backbone,
         input_tensor=input_layer,
         encoder_weights='imagenet',
         classes=len(CLASS_COLOR),
@@ -66,7 +81,7 @@ if __name__ == '__main__':
         activation='softmax'
     )
 
-    save_name = 'weights/' + args.name + '.h5'
+    save_name = 'weights/' + args.backbone + '.h5'
     callbacks_list = [
         ModelCheckpoint(
             save_name,
@@ -82,16 +97,16 @@ if __name__ == '__main__':
             min_lr=1e-5)
     ]
 
-    model.compile(optimizer=Adam(1e-4), loss=dice_loss, metrics=[dice_coef, jaccard_coef])
+    model.compile(optimizer=Adam(1e-4), loss=custom_loss, metrics=[dice_coef, jaccard_coef, mean_iou])
 
     history = model.fit_generator(generator,
-                                  steps_per_epoch=500,
-                                  epochs=2,
+                                  steps_per_epoch=len(os.listdir(TRAIN_PATH)),
+                                  epochs=10,
                                   verbose=1,
                                   callbacks=callbacks_list)
 
     model_json = model.to_json()
-    json_file = open('models/' + args.name + '.json', 'w')
+    json_file = open('models/' + args.backbone + '.json', 'w')
     json_file.write(model_json)
     json_file.close()
     print('Model saved!')
