@@ -67,8 +67,7 @@ def make_aug(image, mask, p):
 
 if __name__ == '__main__':
     generator = SegDataGenerator(TRAIN_PATH, ANNO_PATH, batch_size=2, input_shape=(IMG_HEIGHT, IMG_WIDTH, 3),
-                                 mask_shape=(IMG_HEIGHT, IMG_WIDTH, 3), preprocessing_function=make_aug,
-                                 classes=len(CLASS_COLOR),
+                                 mask_shape=(IMG_HEIGHT, IMG_WIDTH, len(CLASS_COLOR)), preprocessing_function=make_aug,
                                  classes_colors=CLASS_COLOR, prob_aug=1)
     input_layer = Input(shape=(IMG_HEIGHT, IMG_WIDTH, 3))
     model = FPN(
@@ -100,7 +99,7 @@ if __name__ == '__main__':
     model.compile(optimizer=Adam(1e-4), loss=custom_loss, metrics=[dice_coef, jaccard_coef, mean_iou])
 
     history = model.fit_generator(generator,
-                                  steps_per_epoch=len(os.listdir(TRAIN_PATH)),
+                                  steps_per_epoch=3000,
                                   epochs=10,
                                   verbose=1,
                                   callbacks=callbacks_list)
